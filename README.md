@@ -48,6 +48,12 @@ XSS：跨站脚本攻击，CSRF：客户端请求伪造，ssrf服务端请求伪
 
 ## CSS相关
 
+### 盒模型
+
+IE盒模型：width = content+border+padding
+
+标准盒模型：width = content
+
 ## js相关
 
 ### 闭包
@@ -362,6 +368,109 @@ app.directive('debounce', Debounce);
 test.vue
 <div v-debounce="{fn:testfun,time:2000}">点击</div>
 ```
+### 路由钩子函数
+
+常见的路由钩子函数：router.beforeEach
+
+全局前置守卫：
+
+```typescript
+const router = createRouter({ ... })
+router.beforeEach((to, from) => {
+  // ...
+  // 返回 false 以取消导航
+  return false
+})
+```
+全局解析守卫：
+```typescript
+router.beforeResolve(async to => {
+  if (to.meta.requiresCamera) {
+    try {
+      await askForCameraPermission()
+    } catch (error) {
+      if (error instanceof NotAllowedError) {
+        // ... 处理错误，然后取消导航
+        return false
+      } else {
+        // 意料之外的错误，取消导航并把错误传给全局处理器
+        throw error
+      }
+    }
+  }
+})
+```
+全局后置钩子：
+```typescript
+router.afterEach((to, from) => {
+  sendToAnalytics(to.fullPath)
+})
+```
+路由独享的守卫：
+```typescript
+const routes = [
+  {
+    path: '/users/:id',
+    component: UserDetails,
+    beforeEnter: (to, from) => {
+      // reject the navigation
+      return false
+    },
+  },
+]
+```
+组件内的守卫：beforeRouteEnter  、beforeRouteUpdate、beforeRouteLeave
+```typescript
+ beforeRouteEnter(to, from) {
+    // 在渲染该组件的对应路由被验证前调用
+    // 不能获取组件实例 `this` ！
+    // 因为当守卫执行时，组件实例还没被创建！
+  },
+```
+ 
+### nextTick原理
+
+Vue.nextTick(cb,context)
+
+在下次Dom更新循环结束之后执行延迟回调。在修改数据之后立即使用这个方法，获取更新后的DOM
+
+Vue在更新DOM时是异步的。只要监听到数据变化，Vue将开启一个队列，并缓冲在同一事件循环中发生的所有数据变更。如果同一个watcher被多次出发，只会被推入到队列中一次。然后在下一个事件循环（tick）中，Vue刷新队列并执行实际（已去重的）工作。Vue在内部对异步队列使用原生的Promise.then、MutationObserver、和setImmediate，如果执行环境不支持的话，则会采用setTimeout(fn,0)代替。
+
+源码：
+
+```typescript
+export function nextTick (cb?: Function, ctx?: Object) {
+  let _resolve
+   // 每次调用nextTick会将当前的方法压入到一个回调队列中 
+  callbacks.push(() => {
+    if (cb) {
+      try {
+        cb.call(ctx)
+      } catch (e) {
+        handleError(e, ctx, 'nextTick')
+      }
+    } else if (_resolve) {
+      _resolve(ctx)
+    }
+  })
+  // 保证只执行一次
+  if (!pending) {
+    pending = true
+  // 执行当前方法的方式，Promise.then、MutationObserver、和setImmediate，如果执行环境不支持的话，则会采用setTimeout(fn,0)代替。
+    timerFunc()
+  }
+  // $flow-disable-line
+  if (!cb && typeof Promise !== 'undefined') {
+    return new Promise(resolve => {
+      _resolve = resolve
+    })
+  }
+}
+```
+首先将调用nextTick的回调添加到callbacks数组中，我们将它看作一个队列。
+然后有一个标识pending，这个标识的目的就是，在一次事件循环里面，只执行一次timerFunc函数。
+
+由于Vue对于DOM的更新是异步的，当我们修改完数据，不能马上拿到最新的DOM，所以我们需要nextTick去处理这些异步，我们自然想到微任务和宏任务去处理。源码里面`Promise.then`、`MutationObserver`、`setImmediate`和`setTimeout`去降级处理去处理，将flushCallbacks函数包裹在timerFunc去执行。
 
 ## ES6
 
